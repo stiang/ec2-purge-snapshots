@@ -184,6 +184,7 @@ if aws_access_key and aws_access_key != '' and aws_secret_key and aws_secret_key
                 puts e
               else
                 delete_count += 1
+                sleep [delete_count, 20].min * 0.05
               end
             end
           end
