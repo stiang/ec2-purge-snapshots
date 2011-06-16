@@ -45,7 +45,6 @@ for four weeks, and finally one per month for two years.
 Please fork and add pull requests if you would like to improve this package.
 
 ## Author
-[Stian Grytøyr][2]
+[Stian Grytøyr][1]
 
-[1]: http://www.sublimetext.com/2
-[2]: http://stian.grytoyr.net/about/
+[1]: http://stian.grytoyr.net/about/
