@@ -41,6 +41,9 @@ for four weeks, and finally one per month for two years.
         -u, --url URL                    The Amazon EC2 region URL (default is US East 1)
             --help                       Show this message
 
+## Known issues
+* If you have many snapshots the script will eventually return the AWS error RequestLimitExceeded. Not sure how to fix this, since there is no information given about which limit is exceeded - maybe just add a slight delay between each API call?
+
 ## Contribute
 Please fork and add pull requests if you would like to improve this package.
 
