@@ -9,6 +9,76 @@
 require 'optparse'
 require 'rubygems'
 
+def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
+  newest = vol_snaps.last
+  prev_start_date = nil
+  delete_count    = 0
+  keep_count      = 0
+
+  vol_snaps.each do |snap|
+    snap_date = Time.parse(snap['startTime'])
+    snap_age = ((NOW.to_i - snap_date.to_i).to_f / HOUR.to_f).to_i
+    # Hourly 
+    if snap_age > options[:hours]
+      # Daily 
+      if snap_age <= START_WEEKS_AFTER
+        type_str       = "day"
+        start_date_str = snap_date.strftime("%Y-%m-%d")
+        start_date     = Time.parse("#{start_date_str}")
+      else
+        # Weekly 
+        if snap_age <= START_MONTHS_AFTER
+          type_str       = "week"
+          week_day       = snap_date.strftime("%w").to_i
+          start_date     = Time.at(snap_date.to_i - (week_day * DAY))
+          start_date_str = start_date.strftime("%Y-%m-%d")
+        else
+          # Monthly 
+          type_str = "month"
+          start_date_str = snap_date.strftime("%Y-%m")
+          start_date     = Time.parse("#{start_date_str}-01")
+        end
+      end
+      if start_date_str != prev_start_date
+        # Keep
+        prev_start_date = start_date_str
+        msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{(snap_age.to_f / 24.to_f).to_i} "
+        msg += "days old - keeping it for the #{type_str} of #{start_date_str}" 
+        puts msg unless options[:quiet] 
+        keep_count += 1
+      else
+        # Never delete the newest snapshot
+        if snap['snapshotId'] == newest['snapshotId']
+          msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
+          msg += "will never delete newest snapshot for a volume" 
+          puts msg unless options[:quiet]
+          keep_count += 1
+        else
+          # Delete it
+          not_really_str = options[:noop] ? "(not really) " : ""
+          msg = "[#{vol}] - Deleting #{not_really_str}#{snap['snapshotId']}: #{snap['startTime']}, "
+          msg += "#{(snap_age.to_f / 24.to_f).to_i} days old" 
+          puts msg unless options[:silent]
+          begin
+            ec2.delete_snapshot(:snapshot_id => snap['snapshotId']) unless options[:noop]
+          rescue AWS::Error => e
+            puts e
+          else
+            delete_count += 1
+            sleep [delete_count, 20].min * 0.05
+          end
+        end
+      end
+    else
+      msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
+      msg += "less than or equal to the #{options[:hours]}-hour threshold"
+      puts msg unless options[:quiet]
+      keep_count += 1
+    end
+  end
+  volume_counts[vol] = [delete_count, keep_count]
+end
+
 NOW  = Time.now
 HOUR = 3600
 DAY  = 86400
@@ -20,6 +90,7 @@ if ARGV[0] == "-h" and not ARGV[1]
 end
 
 options = {}
+filter_tags = []
 opts_parser = OptionParser.new do |opts|
   opts.banner = "Usage: #{$0} [options]"
   opts.separator ""
@@ -28,10 +99,14 @@ opts_parser = OptionParser.new do |opts|
   opts.separator ""
   opts.separator "    hours -> days -> weeks -> months"
   opts.separator ""
-  opts.separator "MANDATORY options:"
+  opts.separator "MANDATORY options (one of -v or -t must be used):"
   opts.on("-v", "--volumes VOL1,VOL2,...", Array, "Comma-separated list (no spaces) of volume-ids,", 
                                                   "or 'all' for all volumes") do |v|
     options[:volumes] = v
+  end
+  opts.on("-t", "--tag key=value", "Tag to use to filter the snapshot. May specify multiple.") do |tag|
+    tagParts = tag.split('=')
+    filter_tags << tagParts
   end
   opts.separator ""
   opts.separator "MANDATORY rules:"
@@ -92,7 +167,7 @@ ENV["EC2_URL"] = options[:url] if options[:url]
 require 'AWS'       # sudo gem install amazon-ec2
 
 # Check for mandatory options/rules
-if options[:volumes].nil? or options[:hours].nil? or options[:days].nil? or 
+if (options[:volumes].nil? and filter_tags.empty?) or options[:hours].nil? or options[:days].nil? or 
                              options[:weeks].nil? or options[:months].nil?
   puts opts_parser.help
   exit 1
@@ -117,97 +192,38 @@ if aws_access_key and aws_access_key != '' and aws_secret_key and aws_secret_key
 
   # Make sure we have some snapshots to work with
   unless snapshots.empty?
-    if options[:volumes].size == 1 and options[:volumes][0] == "all"
-      volumes = snapshots.collect {|s| s['volumeId']}.uniq
-    else
-      volumes = options[:volumes]
-    end
-
     volume_counts   = {}
-
-    volumes.each do |vol|
-      # Find snapshots for this volume and sort them by date (oldest first)
-      vol_snaps = snapshots.find_all {|s| s['volumeId'] == vol}.sort_by {|v| v['startTime']}
-      puts "---- VOLUME #{vol} (#{vol_snaps.size} snapshots) ---" unless options[:quiet]
-      newest = vol_snaps.last
-      prev_start_date = nil
-      delete_count    = 0
-      keep_count      = 0
-
-      vol_snaps.each do |snap|
-        snap_date = Time.parse(snap['startTime'])
-        snap_age = ((NOW.to_i - snap_date.to_i).to_f / HOUR.to_f).to_i
-        # Hourly 
-        if snap_age > options[:hours]
-          # Daily 
-          if snap_age <= START_WEEKS_AFTER
-            type_str       = "day"
-            start_date_str = snap_date.strftime("%Y-%m-%d")
-            start_date     = Time.parse("#{start_date_str}")
-          else
-            # Weekly 
-            if snap_age <= START_MONTHS_AFTER
-              type_str       = "week"
-              week_day       = snap_date.strftime("%w").to_i
-              start_date     = Time.at(snap_date.to_i - (week_day * DAY))
-              start_date_str = start_date.strftime("%Y-%m-%d")
-            else
-              # Monthly 
-              type_str = "month"
-              start_date_str = snap_date.strftime("%Y-%m")
-              start_date     = Time.parse("#{start_date_str}-01")
-            end
-          end
-          if start_date_str != prev_start_date
-            # Keep
-            prev_start_date = start_date_str
-            msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{(snap_age.to_f / 24.to_f).to_i} "
-            msg += "days old - keeping it for the #{type_str} of #{start_date_str}" 
-            puts msg unless options[:quiet] 
-            keep_count += 1
-          else
-            # Never delete the newest snapshot
-            if snap['snapshotId'] == newest['snapshotId']
-              msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
-              msg += "will never delete newest snapshot for a volume" 
-              puts msg unless options[:quiet]
-              keep_count += 1
-            else
-              # Delete it
-              not_really_str = options[:noop] ? "(not really) " : ""
-              msg = "[#{vol}] - Deleting #{not_really_str}#{snap['snapshotId']}: #{snap['startTime']}, "
-              msg += "#{(snap_age.to_f / 24.to_f).to_i} days old" 
-              puts msg unless options[:silent]
-              begin
-                ec2.delete_snapshot(:snapshot_id => snap['snapshotId']) unless options[:noop]
-              rescue AWS::Error => e
-                puts e
-              else
-                delete_count += 1
-                sleep [delete_count, 20].min * 0.05
-              end
-            end
-          end
-        else
-          msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
-          msg += "less than or equal to the #{options[:hours]}-hour threshold"
-          puts msg unless options[:quiet]
-          keep_count += 1
-        end
+    if filter_tags.empty? 
+      if options[:volumes].size == 1 and options[:volumes][0] == "all"
+        volumes = snapshots.collect {|s| s['volumeId']}.uniq
+      else
+        volumes = options[:volumes]
       end
-      volume_counts[vol] = [delete_count, keep_count]
+  
+      volumes.each do |vol|
+        # Find snapshots for this volume and sort them by date (oldest first)
+        vol_snaps = snapshots.find_all {|s| s['volumeId'] == vol}.sort_by {|v| v['startTime']}
+        puts "---- VOLUME #{vol} (#{vol_snaps.size} snapshots) ---" unless options[:quiet]
+  
+        purge_snapshots ec2, options, vol, vol_snaps, volume_counts  
+          
+      end      
+    else
+      vol_snaps = snapshots_set.snapshotSet.item.find_all {|s| s['status'] == "completed" && !s['tagSet'].nil? && filter_tags.all? {|f| s['tagSet'].item.detect {|t| t['key']==f[0] && t['value']==f[1]}} }.sort_by {|v| v['startTime']}
+      tag_id = filter_tags.collect{|f| "#{f[0]}=#{f[1]}"}.join(", ")  
+      purge_snapshots ec2, options, tag_id, vol_snaps, {}
     end
     if not options[:xsilent] and not options[:no_summary]
-      puts ""
-      puts "SUMMARY:"
-      puts ""
-      volume_counts.each do |vol, counts|
-        puts "#{vol}:"
-        puts "  deleted: #{counts[0]}"
-        puts "  kept:    #{counts[1]}"
         puts ""
+        puts "SUMMARY:"
+        puts ""
+        volume_counts.each do |vol, counts|
+          puts "#{vol}:"
+          puts "  deleted: #{counts[0]}"
+          puts "  kept:    #{counts[1]}"
+          puts ""
+        end
       end
-    end
   else
     puts "No snapshots found, exiting."
     exit 2
