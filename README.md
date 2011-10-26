@@ -25,9 +25,10 @@ say, every hour, then run this script periodically to clean up.
 
         hours -> days -> weeks -> months
 
-    MANDATORY options:
+    MANDATORY options (one of -v or -t must be used):
         -v, --volumes VOL1,VOL2,...      Comma-separated list (no spaces) of volume-ids,
                                          or 'all' for all volumes
+        -t, --tag KEY=VALUE              Tag to use to filter the snapshot. May specify multiple tags.
 
     MANDATORY rules:
         -h, --hours HOURS                The number of hours to keep ALL snapshots
