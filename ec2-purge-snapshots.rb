@@ -17,7 +17,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
   keep_count      = 0
 
   vol_snaps.each do |snap|
-    snap_date = Time.parse(snap['startTime'])
+    snap_date = Time.parse(snap['startTime']).localtime
     snap_Date = Date.parse(snap_date.to_s)
     snap_age = ((NOW.to_i - snap_date.to_i).to_f / HOUR.to_f).to_i
     # Hourly 
