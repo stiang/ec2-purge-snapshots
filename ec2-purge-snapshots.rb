@@ -8,6 +8,7 @@
 
 require 'optparse'
 require 'rubygems'
+require 'date'
 
 def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
   newest = vol_snaps.last
@@ -17,6 +18,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
 
   vol_snaps.each do |snap|
     snap_date = Time.parse(snap['startTime'])
+    snap_Date = Date.parse(snap_date.to_s)
     snap_age = ((NOW.to_i - snap_date.to_i).to_f / HOUR.to_f).to_i
     # Hourly 
     if snap_age > options[:hours]
@@ -39,7 +41,7 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
           start_date     = Time.parse("#{start_date_str}-01")
         end
       end
-      if start_date_str != prev_start_date
+      if start_date_str != prev_start_date && snap_Date > DELETE_BEFORE_DATE
         # Keep
         prev_start_date = start_date_str
         msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{(snap_age.to_f / 24.to_f).to_i} "
@@ -175,6 +177,7 @@ end
   
 START_WEEKS_AFTER = options[:hours] + (options[:days] * 24)
 START_MONTHS_AFTER = START_WEEKS_AFTER + (options[:weeks] * 24 * 7)
+DELETE_BEFORE_DATE = Date.parse((Time.at(Time.now.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
 
 aws_access_key = options[:access_file] ? File.read(options[:access_file]).strip : ENV['AWS_ACCESS_KEY']
 aws_secret_key = options[:secret_file] ? File.read(options[:secret_file]).strip : ENV['AWS_SECRET_KEY']
