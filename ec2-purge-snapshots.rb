@@ -177,7 +177,7 @@ end
   
 START_WEEKS_AFTER = options[:hours] + (options[:days] * 24)
 START_MONTHS_AFTER = START_WEEKS_AFTER + (options[:weeks] * 24 * 7)
-DELETE_BEFORE_DATE = Date.parse((Time.at(Time.now.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
+DELETE_BEFORE_DATE = Date.parse((Time.at(NOW.to_i - (START_MONTHS_AFTER * HOUR))).to_s) << options[:months]
 
 aws_access_key = options[:access_file] ? File.read(options[:access_file]).strip : ENV['AWS_ACCESS_KEY']
 aws_secret_key = options[:secret_file] ? File.read(options[:secret_file]).strip : ENV['AWS_SECRET_KEY']
