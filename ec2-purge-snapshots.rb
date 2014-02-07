@@ -44,21 +44,21 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
       if start_date_str != prev_start_date && snap_Date > DELETE_BEFORE_DATE
         # Keep
         prev_start_date = start_date_str
-        msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{(snap_age.to_f / 24.to_f).to_i} "
-        msg += "days old - keeping it for the #{type_str} of #{start_date_str}" 
+        msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{(snap_age.to_f / 24.to_f).to_i} "
+        msg += "days old - #{type_str} of #{start_date_str}" 
         puts msg unless options[:quiet] 
         keep_count += 1
       else
         # Never delete the newest snapshot
         if snap['snapshotId'] == newest['snapshotId']
-          msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
-          msg += "will never delete newest snapshot for a volume" 
+          msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{snap_age} hours old - "
+          msg += "will never delete newest snapshot" 
           puts msg unless options[:quiet]
           keep_count += 1
         else
           # Delete it
           not_really_str = options[:noop] ? "(not really) " : ""
-          msg = "[#{vol}] - Deleting #{not_really_str}#{snap['snapshotId']}: #{snap['startTime']}, "
+          msg = "- Deleting #{not_really_str}#{snap['snapshotId']}: #{snap_date}, "
           msg += "#{(snap_age.to_f / 24.to_f).to_i} days old" 
           puts msg unless options[:silent]
           begin
@@ -72,8 +72,8 @@ def purge_snapshots(ec2, options, vol, vol_snaps, volume_counts)
         end
       end
     else
-      msg =  "[#{vol}]   Keeping  #{snap['snapshotId']}: #{snap['startTime']}, #{snap_age} hours old - "
-      msg += "less than or equal to the #{options[:hours]}-hour threshold"
+      msg =  "Keeping #{snap['snapshotId']}: #{snap_date}, #{snap_age} hours old - "
+      msg += "#{options[:hours]}-hour threshold"
       puts msg unless options[:quiet]
       keep_count += 1
     end
